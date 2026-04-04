@@ -16,6 +16,7 @@ from curl_cffi import requests
 from utils.sentinel import get_token, clear_cache
 from utils import config as cfg
 from utils.mail_service import get_email_and_token, get_oai_code, mask_email
+from utils.hero_sms import _try_verify_phone_via_hero_sms
 
 AUTH_URL             = "https://auth.openai.com/oauth/authorize"
 TOKEN_URL            = "https://auth.openai.com/oauth/token"
@@ -482,7 +483,7 @@ def run(proxy: Optional[str]) -> tuple:
                     headers=otp_headers,
                     json_body={}, proxies=proxies, timeout=30,
                 )
-
+            print(f"\n[{cfg.ts()}] [INFO] 正在向 {mask_email(email)} 发送验证码...")
             code = ""
             for resend_attempt in range(max(1, cfg.MAX_OTP_RETRIES)):
                 if resend_attempt > 0:
@@ -491,7 +492,7 @@ def run(proxy: Optional[str]) -> tuple:
                         resend_headers = _oai_headers(did, {"content-type": "application/json"})
                         if sentinel_reg:
                             resend_headers["openai-sentinel-token"] = sentinel_reg
-                            
+
                         _post_with_retry(
                             s_reg,
                             "https://auth.openai.com/api/accounts/email-otp/resend",
@@ -507,7 +508,7 @@ def run(proxy: Optional[str]) -> tuple:
                     break
 
             if not code:
-                print(f"[{cfg.ts()}] [ERROR] 重试次数上限，丢弃当前邮箱。")
+                print(f"[{cfg.ts()}] [ERROR] 重试次数上限，丢弃当前 {mask_email(email)} 邮箱。")
                 return None, None
 
             sentinel_otp = get_token(s_reg, "authorize_continue", proxies)
@@ -601,11 +602,11 @@ def run(proxy: Optional[str]) -> tuple:
             json_body={"username": {"value": email, "kind": "email"}},
             proxies=proxies, allow_redirects=False,
         )
-        
+
         if login_start_resp.status_code != 200:
             print(f"[{cfg.ts()}] [ERROR] 登录环节第一步请求被拒: HTTP {login_start_resp.status_code}")
             return None, None
-            
+
         pwd_page_url = str(
             (login_start_resp.json() if login_start_resp.status_code == 200 else {})
             .get("continue_url") or ""
@@ -618,7 +619,7 @@ def run(proxy: Optional[str]) -> tuple:
             "Referer":               current_url,
             "content-type":          "application/json",
         })
-        
+
         if sentinel_pwd:
             login_pwd_headers["openai-sentinel-token"] = sentinel_pwd
 
@@ -638,6 +639,7 @@ def run(proxy: Optional[str]) -> tuple:
         resp, current_url = _follow_redirect_chain_local(s_log, next_url, proxies)
 
         if current_url.endswith("/email-verification"):
+            print(f"\n[{cfg.ts()}] [INFO] 正在向 {mask_email(email)} 发送验证码...")
             code2 = ""
             for resend_attempt in range(max(1, cfg.MAX_OTP_RETRIES)):
                 if resend_attempt > 0:
@@ -718,7 +720,56 @@ def run(proxy: Optional[str]) -> tuple:
                         code_verifier  = oauth_log.code_verifier,
                         proxies        = proxies,
                     ), password
+        if "/add-phone" in current_url:
+            print(f"[{cfg.ts()}] [INFO] OAuth链路触发风控，进入 HeroSMS 手机号验证流程...")
 
+            # 内部自带阻塞等码、重发、换国等机制
+            ok, next_url_or_reason = _try_verify_phone_via_hero_sms(
+                session=s_log,
+                proxies=proxies,
+                hint_url=current_url
+            )
+
+            if ok and next_url_or_reason:
+                print(f"[{cfg.ts()}] [INFO] 手机验证成功，继续 OAuth 链路: {next_url_or_reason}")
+
+                # 情况1：验证完直接重定向到了带有 code= 的最终回调地址
+                if "code=" in next_url_or_reason:
+                    return submit_callback_url(
+                        callback_url=next_url_or_reason,
+                        expected_state=oauth_log.state,
+                        code_verifier=oauth_log.code_verifier,
+                        proxies=proxies,
+                    ), password
+
+                # 情况2：验证完后，服务器要求继续选择 Workspace 或同意 Consent
+                if next_url_or_reason.endswith("/consent") or next_url_or_reason.endswith("/workspace"):
+                    auth_cookie2 = s_log.cookies.get("oai-client-auth-session") or ""
+                    workspaces2 = _parse_workspace_from_auth_cookie(auth_cookie2)
+                    if workspaces2:
+                        select_resp = _post_with_retry(
+                            s_log,
+                            "https://auth.openai.com/api/accounts/workspace/select",
+                            headers=_oai_headers(s_log.cookies.get("oai-did") or "", {
+                                "Referer": next_url_or_reason, "content-type": "application/json"
+                            }),
+                            json_body={"workspace_id": str(workspaces2[0].get("id"))},
+                            proxies=proxies,
+                        )
+                        final_url = (
+                            _extract_next_url(select_resp.json())
+                            if select_resp.status_code == 200 else ""
+                        )
+                        _, final_loc = _follow_redirect_chain_local(s_log, final_url, proxies)
+                        if "code=" in final_loc:
+                            return submit_callback_url(
+                                callback_url=final_loc,
+                                expected_state=oauth_log.state,
+                                code_verifier=oauth_log.code_verifier,
+                                proxies=proxies,
+                            ), password
+            else:
+                print(f"[{cfg.ts()}] [ERROR] 手机号接码验证彻底失败: {next_url_or_reason}")
         print(f"[{cfg.ts()}] [ERROR] OAuth 授权链路追踪失败！当前死在网页: {current_url}")
         return None, None
 

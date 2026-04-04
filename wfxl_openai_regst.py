@@ -25,6 +25,7 @@ from utils import core_engine
 from utils.config import reload_all_configs
 from utils import db_manager
 from utils.sub2api_client import Sub2APIClient
+from playwright.sync_api import sync_playwright
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -94,6 +95,9 @@ class CFQueryReq(BaseModel):
     main_domains: str
     api_email: str
     api_key: str
+
+class SMSPriceReq(BaseModel):
+    service: str = "openai"
 
 def get_web_password():
     try:
@@ -693,6 +697,65 @@ async def get_dashboard():
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
 
+
+def check_chromium_installed():
+    """
+    检测逻辑：判断 Playwright 所需的 Chromium 是否已安装。
+    """
+    try:
+        with sync_playwright() as p:
+            executable_path = p.chromium.executable_path
+
+            if os.path.exists(executable_path):
+                return True
+            else:
+                print(f"[{core_engine.ts()}] [ERROR] 运行环境异常！")
+                print("=========================================")
+                print(f"[{core_engine.ts()}] [ERROR] 请在终端中手动运行以下命令完成安装：")
+                print(f"[{core_engine.ts()}] [ERROR] playwright install --with-deps chromium")
+                print("=========================================")
+                return False
+
+    except Exception as e:
+        # 捕获 Playwright 异常
+        print(f"[{core_engine.ts()}] [ERROR] 运行环境异常！")
+        print(f"[{core_engine.ts()}] [ERROR] 请在终端中手动运行以下命令完成安装：")
+        print(f"[{core_engine.ts()}] [ERROR] playwright install --with-deps chromium")
+        return False
+
+# 余额查询接口示例
+@app.get('/api/sms/balance')
+async def api_get_sms_balance(token: str = Depends(verify_token)):
+    from utils.hero_sms import hero_sms_get_balance
+    proxy_url = core_engine.cfg.DEFAULT_PROXY
+
+    # 2. 构造代理字典 (curl_cffi 需要这种映射格式)
+    proxies = {
+        "http": proxy_url,
+        "https": proxy_url
+    } if proxy_url else None
+    # 获取当前配置的代理 (如果需要走系统代理，这里可以传入 core_engine.cfg.DEFAULT_PROXY)
+    balance, err = hero_sms_get_balance(proxies=proxies)
+    if balance >= 0:
+        return {"status": "success", "balance": f"{balance:.2f}"}
+    return {"status": "error", "message": err}
+
+# 库存价格查询接口
+@app.post('/api/sms/prices')
+async def api_get_sms_prices(req: SMSPriceReq, token: str = Depends(verify_token)):
+    from utils.hero_sms import _hero_sms_prices_by_service
+    proxy_url = core_engine.cfg.DEFAULT_PROXY
+
+    # 2. 构造代理字典 (curl_cffi 需要这种映射格式)
+    proxies = {
+        "http": proxy_url,
+        "https": proxy_url
+    } if proxy_url else None
+    rows = _hero_sms_prices_by_service(req.service, proxies=proxies)
+    if rows:
+        return {"status": "success", "prices": rows}
+    return {"status": "error", "message": "无法获取价格或当前服务无库存"}
+
 if __name__ == "__main__":
     try: reload_all_configs()
     except: pass
@@ -702,6 +765,7 @@ if __name__ == "__main__":
     print(f"[{core_engine.ts()}] [系统] Author: (wenfxl)轩灵")
     print(f"[{core_engine.ts()}] [系统] 如果遇到问题请更换域名解决，目前eu.cc，xyz，cn，edu.cc等常见域名均不可用，请更换为冷门域名")
     print("-" * 65)
+    check_chromium_installed()
     print(f"[{core_engine.ts()}] [系统] Web 控制台已准备就绪，等待下发指令...")
     sys.__stdout__.write(f"[{core_engine.ts()}] [系统] 控制台地址：http://127.0.0.1:8000 \n")
     sys.__stdout__.write(f"[{core_engine.ts()}] [系统] 控制台初始密码：admin \n")

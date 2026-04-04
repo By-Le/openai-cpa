@@ -56,6 +56,15 @@ def mask_email(text: str) -> str:
     if "@" in text:
         prefix, _ = text.split("@", 1)
         return f"{prefix}@***.***"
+
+    domain_match = re.match(r"^([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|\d{1,3}(?:\.\d{1,3}){3})(:\d+)?$", text)
+    if domain_match:
+        domain_or_ip = domain_match.group(1)
+        port = domain_match.group(2) or ""
+        keep = min(4, max(2, len(domain_or_ip) // 3))
+        prefix = domain_or_ip[:keep]
+        return f"{prefix}***.***{port}"
+
     match = re.match(r"token_(.+)_(\d{10,})\.json", text)
     if match:
         ep, ts_ = match.group(1), match.group(2)
@@ -111,7 +120,7 @@ def get_email_and_token(proxies: Any = None) -> tuple:
                 email = data["email"]
                 mailbox_id = data["id"]
                 set_last_email(email)
-                print(f"[{cfg.ts()}] [INFO] mail-curl 分配邮箱: {email} (BoxID: {mailbox_id})")
+                print(f"[{cfg.ts()}] [INFO] mail-curl 分配邮箱: ({mask_email(email)}) (BoxID: {mailbox_id})")
                 return email, mailbox_id
         except Exception as e:
             print(f"[{cfg.ts()}] [ERROR] mail-curl 获取邮箱异常: {e}")
@@ -121,11 +130,14 @@ def get_email_and_token(proxies: Any = None) -> tuple:
         try:
             from utils.luckmail_service import LuckMailService
             lm_service = LuckMailService(
-                api_key=cfg.LUCKMAIL_API_KEY, 
-                preferred_domain=getattr(cfg, 'LUCKMAIL_PREFERRED_DOMAIN', "")
+                api_key=cfg.LUCKMAIL_API_KEY,
+                preferred_domain=getattr(cfg, 'LUCKMAIL_PREFERRED_DOMAIN', ""),
+                proxies=mail_proxies,
+                email_type=getattr(cfg, 'LUCKMAIL_EMAIL_TYPE', "ms_graph"),
+                variant_mode=getattr(cfg, 'LUCKMAIL_VARIANT_MODE', "")
             )
             email, token = lm_service.get_email_and_token()
-            print(f"[{cfg.ts()}] [INFO] LuckMail 成功分配邮箱: {email}")
+            print(f"[{cfg.ts()}] [INFO] LuckMail 成功分配邮箱: ({mask_email(email)})")
             return email, token
         except Exception as e:
             print(f"[{cfg.ts()}] [ERROR] LuckMail 获取邮箱异常: {e}")
@@ -135,7 +147,7 @@ def get_email_and_token(proxies: Any = None) -> tuple:
         sticky = getattr(_thread_data, 'sticky_domain', None)
         if sticky:
             selected_domain = sticky
-            print(f"[{cfg.ts()}] [INFO] 多级域名模式 - 沿用上一轮成功域名: {selected_domain}")
+            print(f"[{cfg.ts()}] [INFO] 多级域名模式 - 沿用上一轮成功域名: {mask_email(selected_domain)}")
         else:
             main_list = [d.strip() for d in cfg.MAIL_DOMAINS.split(",") if d.strip()]
             if not main_list:
@@ -171,11 +183,11 @@ def get_email_and_token(proxies: Any = None) -> tuple:
                 proxies=mail_proxies, timeout=15,
             )
             if res.json().get("code") == 200:
-                print(f"[{cfg.ts()}] [INFO] CloudMail 成功创建用户: {email_str}")
+                print(f"[{cfg.ts()}] [INFO] CloudMail 成功创建邮箱: {mask_email(email_str)}")
                 return email_str, ""
-            print(f"[{cfg.ts()}] [ERROR] CloudMail 创建用户失败: {res.text}")
+            print(f"[{cfg.ts()}] [ERROR] CloudMail 邮箱创建失败: {res.text}")
         except Exception as e:
-            print(f"[{cfg.ts()}] [ERROR] CloudMail 添加用户异常: {e}")
+            print(f"[{cfg.ts()}] [ERROR] CloudMail 邮箱创建异常: {e}")
         return None, None
 
     if mode == "freemail":
@@ -190,7 +202,7 @@ def get_email_and_token(proxies: Any = None) -> tuple:
                                     json={"email": email_str}, headers=headers,
                                     proxies=mail_proxies, verify=_ssl_verify(), timeout=15)
                 res.raise_for_status()
-                print(f"[{cfg.ts()}] [INFO] 成功通过 Freemail 指定创建邮箱: {email_str}")
+                print(f"[{cfg.ts()}] [INFO] 成功通过 Freemail 指定创建邮箱: {mask_email(email_str)}")
                 return email_str, ""
             except Exception as e:
                 print(f"[{cfg.ts()}] [ERROR] Freemail 邮箱创建异常: {e}")
@@ -218,7 +230,7 @@ def get_email_and_token(proxies: Any = None) -> tuple:
                     email = data["address"].strip()
                     jwt = data.get("jwt", "").strip()
                     set_last_email(email)
-                    print(f"[{cfg.ts()}] [INFO] cloudflare_temp_email成功获取临时邮箱: {email}")
+                    print(f"[{cfg.ts()}] [INFO] cloudflare_temp_email成功获取临时邮箱: {mask_email(email)}")
                     return email, jwt
                 print(f"[{cfg.ts()}] [WARNING] cloudflare_temp_email邮箱申请失败 (尝试 {attempt+1}/5): {res.text}")
                 time.sleep(1)

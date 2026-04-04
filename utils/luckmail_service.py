@@ -28,21 +28,28 @@ def _load_luckmail_client_class():
 class LuckMailService:
     """直连版 LuckMail 接码服务"""
     
-    def __init__(self, api_key: str, preferred_domain: str = ""):
+    def __init__(self, api_key: str, preferred_domain: str = "", proxies: dict = None, email_type: str = "ms_graph", variant_mode: str = ""):
         if not api_key:
             raise ValueError("LuckMail API_KEY 不能为空！请检查配置。")
-            
+
         self.api_key = api_key
         self.base_url = "https://mails.luckyous.com"
         self.project_code = "openai"
-        self.email_type = "ms_graph"
         self.preferred_domain = preferred_domain.strip()
+        self.proxies = proxies
+
+        # 保存邮箱类型和变种模式
+        self.email_type = email_type.strip() or "ms_graph"
+        self.variant_mode = variant_mode.strip()
 
         client_cls = _load_luckmail_client_class()
         if not client_cls:
             raise ValueError("未找到 LuckMail SDK！请确保本地存在 luckmail 文件夹。")
 
         self.client = client_cls(base_url=self.base_url + "/", api_key=self.api_key)
+
+        if self.proxies and hasattr(self.client, "session"):
+            self.client.session.proxies = self.proxies
 
     def _extract_field(self, obj: any, *keys: str) -> any:
         if not obj: return None
@@ -71,8 +78,11 @@ class LuckMailService:
         if self.preferred_domain:
             payload["domain"] = self.preferred_domain
 
+        if self.email_type == "google_variant" and self.variant_mode:
+            payload["variant_mode"] = self.variant_mode
+
         try:
-            resp = requests.post(api_url, headers=headers, json=payload, timeout=15)
+            resp = requests.post(api_url, headers=headers, json=payload, timeout=60)
             if resp.status_code != 200:
                 raise Exception(f"HTTP {resp.status_code} - {resp.text}")
                 

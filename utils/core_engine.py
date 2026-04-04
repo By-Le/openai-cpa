@@ -748,7 +748,7 @@ def process_sub2api_worker(i: int, total: int, item: dict, client: Any, args: An
             item.setdefault("credentials", {}).update(new_tokens)
             
             if hasattr(client, "update_account"):
-                up_ok, up_msg = client.update_account(item)
+                up_ok, up_msg = client.update_account(account_id, item)
                 if up_ok:
                     refresh_success = True
                     print(f"[{ts()}] [SUCCESS] 测活: {mask_email(name)} 刷新后复活成功！")
@@ -774,11 +774,11 @@ def normal_main_loop(args, stop_event: threading.Event):
     sleep_max    = max(sleep_min, cfg.NORMAL_SLEEP_MAX)
     target_count = cfg.NORMAL_TARGET_COUNT
 
-    print(f"\n[{ts()}] >>> 启动常规量产模式 <<<")
+    print(f"\n[{ts()}] [系统] >>> 启动常规量产模式 <<<")
     if target_count > 0:
-        print(f"[{ts()}] 任务目标: 注册 {target_count} 个账号后自动停止")
+        print(f"[{ts()}] [系统] 任务目标: 注册 {target_count} 个账号后自动停止")
     else:
-        print(f"[{ts()}] 任务目标: 无限挂机注册 (按 Ctrl+C 停止)")
+        print(f"[{ts()}] [系统] 任务目标: 无限挂机注册 (按 Ctrl+C 停止)")
 
     success_count  = 0
     total_attempts = 0
@@ -789,7 +789,7 @@ def normal_main_loop(args, stop_event: threading.Event):
             break
 
         total_attempts += 1
-        print(f"\n[{ts()}] --- 开始第 {total_attempts} 次注册 (已成功: {success_count}) ---")
+        print(f"\n[{ts()}] [系统] 开始第 {total_attempts} 次注册 (已成功: {success_count}) ---")
         if stop_event.wait(1.0):
             break
 
@@ -855,11 +855,11 @@ def normal_main_loop(args, stop_event: threading.Event):
 async def cpa_main_loop(args, async_stop_event: asyncio.Event):
     """CPA 智能仓管模式（接入发牌器，防止撞车）。"""
     print("=" * 60)
-    print(f"   目标库存阈值: {cfg.MIN_ACCOUNTS_THRESHOLD} | 单次补发量: {cfg.BATCH_REG_COUNT}")
+    print(f"\n[{ts()}] [系统] 目标库存阈值: {cfg.MIN_ACCOUNTS_THRESHOLD} | 单次补发量: {cfg.BATCH_REG_COUNT}")
     print(
-        f"   周限额剔除规则: 剩余低于 {cfg.MIN_REMAINING_WEEKLY_PERCENT}%"
+        f"\n[{ts()}] [系统] 周限额剔除规则: 剩余低于 {cfg.MIN_REMAINING_WEEKLY_PERCENT}%"
         if cfg.MIN_REMAINING_WEEKLY_PERCENT > 0
-        else "   周限额剔除规则: 完全耗尽才剔除"
+        else f"\n[{ts()}] [系统] 周限额剔除规则: 完全耗尽才剔除"
     )
     print("=" * 60)
 
@@ -976,11 +976,11 @@ async def cpa_main_loop(args, async_stop_event: asyncio.Event):
 async def sub2api_main_loop(args, async_stop_event: asyncio.Event):
     """Sub2API 智能仓管模式"""
     print("=" * 60)
-    print(f"   Sub2API 目标库存阈值: {cfg.SUB2API_MIN_THRESHOLD} | 单次补发量: {cfg.SUB2API_BATCH_COUNT}")
+    print(f"\n[{ts()}] [系统] Sub2API 目标库存阈值: {cfg.SUB2API_MIN_THRESHOLD} | 单次补发量: {cfg.SUB2API_BATCH_COUNT}")
     print(
-        f"   周限额剔除规则: 剩余低于 {cfg.SUB2API_MIN_REMAINING_WEEKLY_PERCENT}%"
+        f"\n[{ts()}] [系统] 周限额剔除规则: 剩余低于 {cfg.SUB2API_MIN_REMAINING_WEEKLY_PERCENT}%"
         if cfg.SUB2API_MIN_REMAINING_WEEKLY_PERCENT > 0
-        else "   周限额剔除规则: 完全耗尽才剔除"
+        else f"\n[{ts()}] [系统] 周限额剔除规则: 完全耗尽才剔除"
     )
     print("=" * 60)
 

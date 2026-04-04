@@ -89,6 +89,21 @@ SUB2API_MIN_REMAINING_WEEKLY_PERCENT: int = 80
 SUB2API_REMOVE_ON_LIMIT_REACHED: bool = True
 SUB2API_REMOVE_DEAD_ACCOUNTS: bool = True
 SUB2API_ENABLE_TOKEN_REVIVE: bool = False
+LUCKMAIL_PREFERRED_DOMAIN: str = ""
+LUCKMAIL_EMAIL_TYPE: str = ""
+LUCKMAIL_VARIANT_MODE: str = ""
+HERO_SMS_ENABLED: bool = False
+HERO_SMS_API_KEY: str = ""
+HERO_SMS_BASE_URL: str = "https://hero-sms.com/stubs/handler_api.php"
+HERO_SMS_COUNTRY: str = "US"
+HERO_SMS_SERVICE: str = "openai"
+HERO_SMS_AUTO_PICK_COUNTRY: bool = False
+HERO_SMS_REUSE_PHONE: bool = True
+HERO_SMS_MAX_PRICE: float = 2.0
+HERO_SMS_MIN_BALANCE: float = 2.0
+HERO_SMS_MAX_TRIES: int = 3
+HERO_SMS_POLL_TIMEOUT_SEC: int = 120
+
 
 NORMAL_SLEEP_MIN: int = 5
 NORMAL_SLEEP_MAX: int = 30
@@ -122,8 +137,11 @@ def reload_all_configs():
     global SUB2API_MIN_THRESHOLD, SUB2API_BATCH_COUNT, SUB2API_CHECK_INTERVAL, SUB2API_THREADS
     global SUB2API_SAVE_TO_LOCAL, SUB2API_MIN_REMAINING_WEEKLY_PERCENT
     global SUB2API_REMOVE_ON_LIMIT_REACHED, SUB2API_REMOVE_DEAD_ACCOUNTS, SUB2API_ENABLE_TOKEN_REVIVE
-    global LUCKMAIL_API_KEY,LUCKMAIL_PREFERRED_DOMAIN
-    
+    global LUCKMAIL_API_KEY,LUCKMAIL_PREFERRED_DOMAIN,LUCKMAIL_EMAIL_TYPE,LUCKMAIL_VARIANT_MODE
+    global HERO_SMS_ENABLED, HERO_SMS_API_KEY, HERO_SMS_BASE_URL, HERO_SMS_COUNTRY, HERO_SMS_SERVICE
+    global HERO_SMS_AUTO_PICK_COUNTRY, HERO_SMS_REUSE_PHONE, HERO_SMS_MAX_PRICE
+    global HERO_SMS_MIN_BALANCE, HERO_SMS_MAX_TRIES, HERO_SMS_POLL_TIMEOUT_SEC
+
     _c = init_config()
 
     EMAIL_API_MODE   = _c.get("email_api_mode", "cloudflare_temp_email")
@@ -209,8 +227,45 @@ def reload_all_configs():
     _luckmail        = _c.get("luckmail", {})
     LUCKMAIL_API_KEY = _luckmail.get("api_key", "")
     LUCKMAIL_PREFERRED_DOMAIN = _luckmail.get("preferred_domain", "")
+    LUCKMAIL_EMAIL_TYPE = str(_luckmail.get("email_type") or "ms_graph").strip()
+    LUCKMAIL_VARIANT_MODE = str(_luckmail.get("variant_mode") or "").strip()
+
+
+
     SUB_DOMAIN_LEVEL = _c.get("sub_domain_level", {})
     ENABLE_SUB_DOMAINS = _c.get("enable_sub_domains", False)
+
+    _hero_sms_conf = _c.get("hero_sms", {})
+    HERO_SMS_ENABLED = _hero_sms_conf.get("enabled", False)
+    HERO_SMS_API_KEY = _hero_sms_conf.get("api_key", "")
+    HERO_SMS_BASE_URL = _hero_sms_conf.get("base_url", "https://hero-sms.com/stubs/handler_api.php")
+    HERO_SMS_COUNTRY = _hero_sms_conf.get("country", "US")
+    HERO_SMS_SERVICE = _hero_sms_conf.get("service", "dr")
+    HERO_SMS_AUTO_PICK_COUNTRY = _hero_sms_conf.get("auto_pick_country", False)
+    HERO_SMS_REUSE_PHONE = _hero_sms_conf.get("reuse_phone", True)
+
+    try:
+        HERO_SMS_MAX_PRICE = float(_hero_sms_conf.get("max_price", 2.0))
+    except:
+        HERO_SMS_MAX_PRICE = 2.0
+
+    try:
+        HERO_SMS_MIN_BALANCE = float(_hero_sms_conf.get("min_balance", 2.0))
+    except:
+        HERO_SMS_MIN_BALANCE = 2.0
+
+    try:
+        HERO_SMS_MAX_TRIES = int(_hero_sms_conf.get("max_tries", 3))
+    except:
+        HERO_SMS_MAX_TRIES = 3
+
+    try:
+        HERO_SMS_POLL_TIMEOUT_SEC = int(_hero_sms_conf.get("poll_timeout_sec", 120))
+    except:
+        HERO_SMS_POLL_TIMEOUT_SEC = 120
+
+
+
     reload_proxy_config()
     print(f"[{ts()}] [系统] 核心配置已完成同步。")
 

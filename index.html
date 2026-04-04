@@ -70,7 +70,7 @@
                     安全登录
                 </button>
 				<div class="text-center mt-4">
-                    <span class="text-[11px] md:text-xs text-gray-400 font-mono tracking-widest">v6.7.0</span>
+                    <span class="text-[11px] md:text-xs text-gray-400 font-mono tracking-widest">v7.6.0</span>
                 </div>
             </div>
         </div>
@@ -79,7 +79,7 @@
             <aside class="w-full md:w-56 h-auto md:h-full bg-gray-900 text-white flex flex-col shadow-xl z-20 shrink-0">
                 <div class="p-3 md:p-5 flex items-center justify-between md:justify-center border-b border-gray-800 shrink-0">
                     <span class="font-black text-base md:text-lg tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">Wenfxl Manager</span>
-					<span class="px-1.5 py-0.5 rounded bg-gray-800 border border-gray-700 text-[10px] text-gray-400 font-mono font-bold leading-none">v6.7.0</span>
+					<span class="px-1.5 py-0.5 rounded bg-gray-800 border border-gray-700 text-[10px] text-gray-400 font-mono font-bold leading-none">v7.6.0</span>
                     <button @click="logout" class="md:hidden text-gray-400 hover:text-red-400 text-xs flex items-center gap-1 font-bold bg-gray-800 px-2 py-1 rounded">
                         <span>🚪</span> 退出
                     </button>
@@ -138,7 +138,7 @@
                 <div class="flex-1 overflow-y-auto p-3 md:p-6 bg-gray-100 relative">
                     <div class="w-full xl:max-w-[80%] mx-auto">
                         
-                        <button v-show="['email', 'proxy', 'relay', 'concurrency'].includes(currentTab)" @click="saveConfig" 
+                        <button v-show="['email', 'proxy', 'relay', 'concurrency', 'sms'].includes(currentTab)" @click="saveConfig"
                                 class="fixed bottom-4 right-4 md:bottom-8 md:right-8 z-50 px-4 md:px-6 py-2.5 md:py-3 bg-indigo-600 text-white text-xs md:text-sm font-extrabold rounded-full shadow-2xl hover:bg-indigo-700 transition transform hover:-translate-y-1 flex items-center gap-2 ring-4 ring-indigo-600/30">
                             <span>💾</span> <span class="hidden sm:inline">保存并热重载配置</span><span class="sm:hidden">保存</span>
                         </button>
@@ -575,6 +575,7 @@
 
                                 <div v-if="config.email_api_mode === 'luckmail' && config.luckmail">
                                     <p class="text-xs md:text-sm text-yellow-700 mb-3 md:mb-4 font-bold bg-yellow-100 inline-block px-2 py-1 rounded">当前: LuckMail 接码</p>
+
                                     <label class="form-label">API Key (密钥)</label>
                                     <div class="relative mb-2">
                                         <input :type="showPwd.luckmail ? 'text' : 'password'" v-model="config.luckmail.api_key" class="form-input pr-10 text-sm" style="margin-bottom: 0;">
@@ -582,15 +583,150 @@
                                             {{ showPwd.luckmail ? '👁️' : '🙈' }}
                                         </button>
                                     </div>
-                                    <label class="form-label mt-3 md:mt-4">指定邮箱后缀</label>
-                                    <select v-model="config.luckmail.preferred_domain" class="form-input bg-white font-bold text-gray-700 shadow-sm text-sm">
-                                        <option value="">不限制 (随机分配)</option>
-                                        <option value="outlook.com">outlook.com</option>
-                                        <option value="hotmail.com">hotmail.com</option>
-                                    </select>
+
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3 md:mt-4 items-start">
+
+                                        <div>
+                                            <label class="form-label mb-1">邮箱类型</label>
+                                            <select v-model="config.luckmail.email_type" @change="config.luckmail.preferred_domain=''" class="form-input bg-white font-bold text-gray-700 shadow-sm text-sm mb-0">
+                                                <option value="ms_graph">微软邮箱</option>
+                                                <option value="google_variant">谷歌变种</option>
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <label class="form-label mb-1">指定邮箱后缀</label>
+                                            <select v-if="config.luckmail.email_type !== 'google_variant'" v-model="config.luckmail.preferred_domain" class="form-input bg-white font-bold text-gray-700 shadow-sm text-sm mb-0">
+                                                <option value="">不限 (随机)</option>
+                                                <option value="outlook.com">@outlook.com</option>
+                                                <option value="hotmail.com">@hotmail.com</option>
+                                            </select>
+                                            <select v-else v-model="config.luckmail.preferred_domain" class="form-input bg-white font-bold text-gray-700 shadow-sm text-sm mb-0">
+                                                <option value="">不限 (随机)</option>
+                                                <option value="gmail.com">@gmail.com</option>
+                                                <option value="googlemail.com">@googlemail.com</option>
+                                            </select>
+                                        </div>
+
+                                        <div v-if="config.luckmail.email_type === 'google_variant'">
+                                            <label class="form-label mb-1">变种模式</label>
+                                            <select v-model="config.luckmail.variant_mode" class="form-input bg-white font-bold text-green-700 shadow-sm text-sm mb-0 border-green-300">
+                                                <option value="">不限 (全随机)</option>
+                                                <option value="all">随机混合 (all)</option>
+                                                <option value="dot">仅点号 (dot)</option>
+                                                <option value="plus">仅+号 (plus)</option>
+                                                <option value="mixed">混合变种 (mixed)</option>
+                                            </select>
+                                        </div>
+
+                                    </div>
                                 </div>
                             </div>
                         </div>
+
+                        <div v-show="currentTab === 'sms'" v-if="config" class="space-y-4 md:space-y-6">
+                            <div class="config-card lg:col-span-2 border-t-4 border-orange-500 bg-orange-50/20" v-if="config.hero_sms">
+                                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 md:mb-6 border-b border-orange-200 pb-3 md:pb-4 gap-3">
+                                    <h3 class="config-title text-orange-700 border-none mb-0 pb-0 text-xl md:text-2xl">📱 HeroSMS 手机接码</h3>
+                                    <label class="form-checkbox-label mb-0 bg-orange-100 px-3 py-2 md:px-5 md:py-3 rounded-xl cursor-pointer hover:bg-orange-200 transition shadow-sm w-full sm:w-auto flex items-center justify-center">
+                                        <input type="checkbox" v-model="config.hero_sms.enabled" class="form-checkbox m-0 w-5 h-5 md:w-6 md:h-6 text-orange-600 border-orange-300">
+                                        <span class="font-black text-orange-900 text-base md:text-lg ml-2">主开关：开启接码</span>
+                                    </label>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6" :class="{'opacity-50 pointer-events-none grayscale-[50%]': !config.hero_sms.enabled}">
+                                    <div>
+                                        <label class="form-label text-xs md:text-sm text-orange-800 font-bold flex justify-between">
+                                            API Key
+                                            <span class="text-orange-600">余额: <span class="font-mono">{{ heroSmsBalance || '0.00' }}</span> USD</span>
+                                        </label>
+                                        <div class="flex gap-2">
+                                            <input type="text" v-model="config.hero_sms.api_key" class="form-input border-orange-200 text-xs md:text-sm mb-0 flex-1" placeholder="HeroSMS API Key">
+                                            <button @click="fetchHeroSmsBalance" :disabled="isLoadingBalance" class="px-3 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition border border-orange-200 flex items-center justify-center">
+                                                <span :class="{'animate-spin': isLoadingBalance}">{{ isLoadingBalance ? '⌛' : '💰' }}</span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="md:col-span-2 pt-2">
+                                        <button @click="fetchHeroSmsPrices" :disabled="isLoadingPrices" class="w-full py-2 bg-white border border-orange-300 text-orange-700 rounded-lg text-xs md:text-sm font-bold hover:bg-orange-50 transition flex items-center justify-center gap-2 shadow-sm">
+                                            <span :class="{'animate-spin': isLoadingPrices}">{{ isLoadingPrices ? '🔄' : '📊' }}</span>
+                                            {{ isLoadingPrices ? '正在拉取全球库存数据...' : '点击获取当前服务全球价格与库存面板' }}
+                                        </button>
+                                    </div>
+
+                                    <div v-if="heroSmsPrices.length > 0" class="md:col-span-2 mt-4 bg-white rounded-lg border border-orange-100 overflow-hidden shadow-inner">
+                                        <div class="bg-orange-50 px-3 py-2 border-b border-orange-100 flex justify-between items-center">
+                                            <span class="text-[10px] md:text-xs font-bold text-orange-800">当前项目: {{ config.hero_sms.service }} 实时库存 (按价格升序)</span>
+                                            <button @click="heroSmsPrices = []" class="text-orange-400 hover:text-orange-600 text-xs">关闭面板</button>
+                                        </div>
+                                        <div class="max-h-[300px] overflow-y-auto">
+                                            <table class="min-w-full divide-y divide-orange-100">
+                                                <thead class="bg-gray-50 sticky top-0">
+                                                <tr class="text-[10px] md:text-xs text-orange-900 font-bold uppercase">
+                                                    <th class="px-3 py-2 text-left">国家 / ID</th>
+                                                    <th class="px-3 py-2 text-left">单价 ($)</th>
+                                                    <th class="px-3 py-2 text-left">余量 (个)</th>
+                                                    <th class="px-3 py-2 text-right">操作</th>
+                                                </tr>
+                                            </thead>
+
+                                            <tbody class="divide-y divide-orange-50 text-[11px] md:text-xs">
+                                                <tr v-for="item in heroSmsPrices" :key="item.country" class="hover:bg-orange-50/50">
+                                                    <td class="px-3 py-2">
+                                                        <div class="font-bold text-gray-800">{{ item.name }}</div> <div class="text-[10px] text-gray-400 font-mono">ID: {{ item.country }}</div> </td>
+                                                    <td class="px-3 py-2 text-green-600 font-bold">${{ item.cost }}</td>
+                                                    <td class="px-3 py-2 text-gray-500">{{ item.count }}</td>
+                                                    <td class="px-3 py-2 text-right">
+                                                        <button @click="config.hero_sms.country = item.country; showToast('已切换至: ' + item.name, 'success')"
+                                                                class="bg-orange-100 text-orange-600 px-2 py-1 rounded hover:bg-orange-600 hover:text-white transition font-bold">
+                                                            选用
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mt-4">
+                                        <div>
+                                            <label class="form-label text-[10px] md:text-xs text-orange-800 font-bold">余额触发下限 ($)</label>
+                                            <span class="text-[9px] text-orange-400 block mb-1">低于此值停止任务</span>
+                                            <input type="number" step="0.1" v-model.number="config.hero_sms.min_balance" class="form-input border-orange-200 text-xs md:text-sm mb-0 font-mono">
+                                        </div>
+                                        <div>
+                                            <label class="form-label text-[10px] md:text-xs text-orange-800 font-bold">最大取号单价 ($)</label>
+                                            <span class="text-[9px] text-orange-400 block mb-1">超过此价不买号</span>
+                                            <input type="number" step="0.1" v-model.number="config.hero_sms.max_price" class="form-input border-orange-200 text-xs md:text-sm mb-0 font-mono">
+                                        </div>
+                                        <div>
+                                            <label class="form-label text-[10px] md:text-xs text-orange-800 font-bold">单次任务取号上限</label>
+                                            <span class="text-[9px] text-orange-400 block mb-1">失败多少次后彻底放弃</span>
+                                            <input type="number" v-model.number="config.hero_sms.max_tries" class="form-input border-orange-200 text-xs md:text-sm mb-0 font-mono">
+                                        </div>
+                                        <div>
+                                            <label class="form-label text-[10px] md:text-xs text-orange-800 font-bold">等码超时 (秒)</label>
+                                            <span class="text-[9px] text-orange-400 block mb-1">单个号等多久超时</span>
+                                            <input type="number" v-model.number="config.hero_sms.poll_timeout_sec" class="form-input border-orange-200 text-xs md:text-sm mb-0 font-mono">
+                                        </div>
+                                    </div>
+
+                                    <div class="md:col-span-2 flex flex-wrap gap-4 md:gap-6 mt-2 pt-4 border-t border-orange-200">
+                                        <label class="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-lg border border-orange-200 shadow-sm hover:bg-orange-50 transition">
+                                            <input type="checkbox" v-model="config.hero_sms.auto_pick_country" class="form-checkbox text-orange-500 rounded border-orange-300 w-4 h-4">
+                                            <span class="text-xs md:text-sm font-bold text-orange-800">智能国家优选 (避开黑名单/超时区)</span>
+                                        </label>
+                                        <label class="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-lg border border-orange-200 shadow-sm hover:bg-orange-50 transition">
+                                            <input type="checkbox" v-model="config.hero_sms.reuse_phone" class="form-checkbox text-orange-500 rounded border-orange-300 w-4 h-4">
+                                            <span class="text-xs md:text-sm font-bold text-orange-800">启用号码二次复用机制</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+
 
                         <div v-show="currentTab === 'proxy'" v-if="config" class="space-y-4 md:space-y-6">
                             <div class="config-card lg:max-w-2xl">

@@ -12,6 +12,7 @@ createApp({
                 { id: 'console', name: '运行主页', icon: '💻' },
                 { id: 'accounts', name: '账号库存', icon: '📦' },
                 { id: 'email', name: '邮箱配置', icon: '📧' },
+                { id: 'sms', name: '手机接码', icon: '📱' },
 				// { id: 'cf_routes', name: 'CF 路由', icon: '🌍' },
                 { id: 'proxy', name: '网络代理', icon: '🌐' },
                 { id: 'relay', name: '中转管仓', icon: '☁️' },
@@ -20,6 +21,10 @@ createApp({
 			cfGlobalStatus: null,
 			isLoadingSync: false,
 			cfRoutes: [],
+            heroSmsBalance: '0.00',
+            heroSmsPrices: [],
+            isLoadingBalance: false,
+            isLoadingPrices: false,
             selectedCfRoutes: [],
 			cfGlobalStatusList: [],
 			cfStatusTimer: null,
@@ -715,6 +720,46 @@ createApp({
 		toggleAllCfRoutes(event) {
 			if (event.target.checked) this.selectedCfRoutes = [...this.cfRoutes];
 			else this.selectedCfRoutes = [];
-		}
+		},
+        async fetchHeroSmsBalance() {
+            if (!this.config.hero_sms.api_key) return this.showToast('请先填写 API Key！', 'warning');
+            this.isLoadingBalance = true;
+            try {
+                const res = await this.authFetch('/api/sms/balance'); // 需后端配合增加此接口
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.heroSmsBalance = data.balance;
+                    this.showToast('余额刷新成功', 'success');
+                } else {
+                    this.showToast(data.message || '查询失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('查询异常: ' + e.message, 'error');
+            } finally {
+                this.isLoadingBalance = false;
+            }
+        },
+
+        async fetchHeroSmsPrices() {
+            if (!this.config.hero_sms.api_key) return this.showToast('请先填写 API Key！', 'warning');
+            this.isLoadingPrices = true;
+            try {
+                const res = await this.authFetch('/api/sms/prices', {
+                    method: 'POST',
+                    body: JSON.stringify({ service: this.config.hero_sms.service })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    this.heroSmsPrices = data.prices;
+                    this.showToast(`获取到 ${data.prices.length} 个国家的库存数据`, 'success');
+                } else {
+                    this.showToast(data.message || '获取失败', 'error');
+                }
+            } catch (e) {
+                this.showToast('通信异常: ' + e.message, 'error');
+            } finally {
+                this.isLoadingPrices = false;
+            }
+        },
     }
 }).mount('#app');
