@@ -4,10 +4,12 @@ import threading
 import yaml
 import random
 import string
+import shutil
 from datetime import datetime
 from typing import Optional
 from utils.proxy_manager import reload_proxy_config
 
+CONFIG_FILE_LOCK = threading.Lock()
 
 def ts() -> str:
     return datetime.now().strftime("%H:%M:%S")
@@ -24,11 +26,25 @@ def format_docker_url(url: str) -> str:
 
 def init_config():
     config_path = "config.yaml"
+    template_path = "config.example.yaml"
     if not os.path.exists(config_path):
-        print(f"[{ts()}] [ERROR] 配置文件 {config_path} 不存在，请检查！")
-        exit(1)
+        if os.path.exists(template_path):
+            print(f"[{ts()}] [系统] 未检测到 {config_path}，正在从模板自动生成...")
+            try:
+                import shutil
+                shutil.copyfile(template_path, config_path)
+                print(f"[{ts()}] [SUCCESS] 配置文件初始化成功！程序已加载默认配置。")
+            except Exception as e:
+                print(f"[{ts()}] [ERROR] 自动生成配置文件失败: {e}")
+                exit(1)
+        else:
+            print(f"[{ts()}] [ERROR] 配置文件 {config_path} 不存在，且未找到模板文件 {template_path}！")
+            print(f"[{ts()}] [ERROR] 请确保项目目录完整。")
+            exit(1)
+
+    # 正常读取配置
     with open(config_path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        return yaml.safe_load(f) or {}
 
 _c: dict = {}
 ENABLE_SUB_DOMAINS: bool = False
@@ -77,6 +93,7 @@ CPA_THREADS: int = 10
 CHECK_INTERVAL_MINUTES: int = 60
 ENABLE_TOKEN_REVIVE: bool = False
 SUB_DOMAIN_LEVEL: int = 1
+RANDOM_SUB_DOMAIN_LEVEL: bool = False
 ENABLE_SUB2API_MODE: bool = False
 SUB2API_URL: str = ""
 SUB2API_KEY: str = ""
@@ -125,7 +142,7 @@ def reload_all_configs():
     global CM_API_URL, CM_ADMIN_EMAIL, CM_ADMIN_PASS
     global MC_API_BASE, MC_KEY
     global DEFAULT_PROXY
-    global SUB_DOMAIN_LEVEL
+    global SUB_DOMAIN_LEVEL,RANDOM_SUB_DOMAIN_LEVEL
     global ENABLE_MULTI_THREAD_REG, REG_THREADS, MAX_OTP_RETRIES
     global USE_PROXY_FOR_EMAIL, ENABLE_EMAIL_MASKING
     global LOGIN_DELAY_MIN, LOGIN_DELAY_MAX
@@ -238,7 +255,8 @@ def reload_all_configs():
     except (ValueError, TypeError):
         LUCKMAIL_TAG_ID = None
 
-    SUB_DOMAIN_LEVEL = _c.get("sub_domain_level", {})
+    SUB_DOMAIN_LEVEL = _c.get("sub_domain_level", 1)
+    RANDOM_SUB_DOMAIN_LEVEL = _c.get("random_sub_domain_level", False)
     ENABLE_SUB_DOMAINS = _c.get("enable_sub_domains", False)
 
     _hero_sms_conf = _c.get("hero_sms", {})

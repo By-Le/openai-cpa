@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Optional, Tuple
 from curl_cffi import requests, CurlMime
-
+import queue
 from utils import mail_service
 from utils import config as cfg
 from utils import db_manager
@@ -33,7 +33,7 @@ from utils.register import run, refresh_oauth_token as _refresh_oauth_token
 from utils.proxy_manager import smart_switch_node
 from utils.sub2api_client import Sub2APIClient
 
-
+_stats_lock = threading.Lock()
 sub_fail_counts = {}
 _heal_lock = threading.Lock()
 DEFAULT_CLIPROXY_UA = "codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal"
@@ -52,7 +52,7 @@ KNOWN_CLIPROXY_ERROR_LABELS = {
     "unsupported_region":   "地区不支持",
 }
 
-log_queue    = __import__("queue").Queue()
+log_queue = queue.Queue(maxsize=1500)
 _orig_print  = builtins.print
 _thread_local = threading.local()
 _print_lock   = threading.Lock()
@@ -72,7 +72,10 @@ def web_print(*args, **kwargs):
         with _print_lock:
             msg = _thread_local.buffer.lstrip("\n")
             if msg and msg.strip() != ".":
-                log_queue.put(msg.strip())
+                try:
+                    log_queue.put_nowait(msg.strip())
+                except queue.Full:
+                    pass
         _thread_local.buffer = ""
 
 
@@ -486,18 +489,18 @@ def handle_registration_result(result: Any, cpa_upload: bool = False) -> str:
      
     if not token_json_str or token_json_str == "retry_403":
         if token_json_str == "retry_403":
-            run_stats["retries"] += 1
+            with _stats_lock: run_stats["retries"] += 1
             print(f"[{ts()}] [WARNING] 检测到 403 频率限制，挂起重试...")
             ret_status = "retry_403"
         else:
-            run_stats["failed"] += 1
+            with _stats_lock: run_stats["failed"] += 1
             ret_status = "failed"
         if cfg.ENABLE_SUB_DOMAINS:
             mail_service.clear_sticky_domain() 
             print(f"[{ts()}] [系统] 域名 {mask_email(cur_dom or '')} 注册失败，下一轮重新生成。")
             
     else:
-        run_stats["success"] += 1
+        with _stats_lock: run_stats["success"] += 1
         token_data    = json.loads(token_json_str)
         account_email = token_data.get("email", "unknown")
 
@@ -626,60 +629,60 @@ def run_and_refresh(proxy, args, cpa_upload=False, skip_switch=False):
             
         # time.sleep(10)
         
-def auto_heal_subdomain(failed_domain: str):
-    """
-    功能：仅销毁本地失效域名记录。
-    """
-    print(f"[{ts()}] [自愈] 域名 {failed_domain} 达到失败阈值，启动快速更替程序...")
-    
-    cf_cfg = getattr(cfg, '_c', {})
-    root_str = cf_cfg.get("mail_domains", "")
-    root_domains = [d.strip() for d in root_str.split(",") if d.strip()]
-    
-    main_dom = None
-    for root in root_domains:
-        if failed_domain.endswith(root):
-            main_dom = root
-            break
-            
-    if not main_dom:
-        print(f"[{ts()}] [ERROR] 无法识别 {failed_domain} 所属的主域，跳过自愈。")
-        return
-
-    level = cf_cfg.get("sub_domain_level", 1)
-    refill_num = int(getattr(cfg, 'SUB_DOMAIN_REFILL_COUNT', 1))
-    new_domains = []
-    for _ in range(refill_num):
-        random_parts = []
-        for _ in range(level):
-            random_parts.append(''.join(random.choices(string.ascii_lowercase + string.digits, k=8)))
-        new_domains.append(".".join(random_parts) + f".{main_dom}")
-
-    with _heal_lock:
-        current_list = [d.strip() for d in cfg.SUB_DOMAINS_LIST.split(",") if d.strip()]
-        if failed_domain in current_list:
-            current_list.remove(failed_domain)
-        current_list.extend(new_domains)
-        
-        config_path = "config.yaml"
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                y = yaml.safe_load(f) or {}
-            
-            y["sub_domains_list"] = ",".join(current_list)
-            y["sub_domain_fail_threshold"] = cfg.SUB_DOMAIN_FAIL_THRESHOLD
-            y["sub_domain_refill_count"] = cfg.SUB_DOMAIN_REFILL_COUNT
-            
-            with open(config_path, "w", encoding="utf-8") as f:
-                yaml.dump(y, f, allow_unicode=True, sort_keys=False)
-            
-            reload_all_configs()
-            for ns in new_domains:
-                print(f"[{ts()}] [自愈] 已成功补货新域名: {ns}")
-                
-            print(f"[{ts()}] [SUCCESS] 配置文件已更新，业务线程将无缝切换新域名。")
-        except Exception as e:
-            print(f"[{ts()}] [ERROR] 自愈配置保存失败: {e}")
+# def auto_heal_subdomain(failed_domain: str):
+#     """
+#     功能：仅销毁本地失效域名记录。
+#     """
+#     print(f"[{ts()}] [自愈] 域名 {failed_domain} 达到失败阈值，启动快速更替程序...")
+#
+#     cf_cfg = getattr(cfg, '_c', {})
+#     root_str = cf_cfg.get("mail_domains", "")
+#     root_domains = [d.strip() for d in root_str.split(",") if d.strip()]
+#
+#     main_dom = None
+#     for root in root_domains:
+#         if failed_domain.endswith(root):
+#             main_dom = root
+#             break
+#
+#     if not main_dom:
+#         print(f"[{ts()}] [ERROR] 无法识别 {failed_domain} 所属的主域，跳过自愈。")
+#         return
+#
+#     level = cf_cfg.get("sub_domain_level", 1)
+#     refill_num = int(getattr(cfg, 'SUB_DOMAIN_REFILL_COUNT', 1))
+#     new_domains = []
+#     for _ in range(refill_num):
+#         random_parts = []
+#         for _ in range(level):
+#             random_parts.append(''.join(random.choices(string.ascii_lowercase + string.digits, k=8)))
+#         new_domains.append(".".join(random_parts) + f".{main_dom}")
+#
+#     with _heal_lock:
+#         current_list = [d.strip() for d in cfg.SUB_DOMAINS_LIST.split(",") if d.strip()]
+#         if failed_domain in current_list:
+#             current_list.remove(failed_domain)
+#         current_list.extend(new_domains)
+#
+#         config_path = "config.yaml"
+#         try:
+#             with open(config_path, "r", encoding="utf-8") as f:
+#                 y = yaml.safe_load(f) or {}
+#
+#             y["sub_domains_list"] = ",".join(current_list)
+#             y["sub_domain_fail_threshold"] = cfg.SUB_DOMAIN_FAIL_THRESHOLD
+#             y["sub_domain_refill_count"] = cfg.SUB_DOMAIN_REFILL_COUNT
+#
+#             with open(config_path, "w", encoding="utf-8") as f:
+#                 yaml.dump(y, f, allow_unicode=True, sort_keys=False)
+#
+#             reload_all_configs()
+#             for ns in new_domains:
+#                 print(f"[{ts()}] [自愈] 已成功补货新域名: {ns}")
+#
+#             print(f"[{ts()}] [SUCCESS] 配置文件已更新，业务线程将无缝切换新域名。")
+#         except Exception as e:
+#             print(f"[{ts()}] [ERROR] 自愈配置保存失败: {e}")
 
 def _handle_sub2api_dead_account(item: dict, client: Any, is_disabled: bool) -> None:
     """统一处理 Sub2API 彻底死亡账号（删除或禁用）"""

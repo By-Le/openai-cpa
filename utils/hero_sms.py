@@ -17,10 +17,14 @@ def _warn(msg):
     print(f"[{cfg.ts()}] [INFO] {msg}")
 
 def _raise_if_stopped() -> None:
-    pass
+    if getattr(cfg, 'GLOBAL_STOP', False):
+        raise UserStoppedError("stopped_by_user")
 
 def _sleep_interruptible(sec: float) -> bool:
-    time.sleep(sec)
+    for _ in range(int(sec * 10)):
+        if getattr(cfg, 'GLOBAL_STOP', False):
+            return True
+        time.sleep(0.1)
     return False
 
 def _build_sentinel_for_session(session, flow: str, proxies: Any) -> str:

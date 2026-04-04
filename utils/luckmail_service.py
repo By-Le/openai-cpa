@@ -5,14 +5,21 @@ from curl_cffi import requests
 from typing import Optional, Any
 from utils import config as cfg
 
+_LUCKMAIL_CLIENT_CLASS_CACHE = None
+
+
 def _load_luckmail_client_class():
-    """动态加载 luckmail SDK"""
+    global _LUCKMAIL_CLIENT_CLASS_CACHE
+    if _LUCKMAIL_CLIENT_CLASS_CACHE is not None:
+        return _LUCKMAIL_CLIENT_CLASS_CACHE
+
     try:
         from luckmail import LuckMailClient
-        return LuckMailClient
+        _LUCKMAIL_CLIENT_CLASS_CACHE = LuckMailClient
+        return _LUCKMAIL_CLIENT_CLASS_CACHE
     except ImportError:
         pass
-        
+
     candidates = [
         Path(__file__).resolve().parent / "luckmail",
         Path(__file__).resolve().parents[1] / "tools" / "luckmail",
@@ -22,9 +29,11 @@ def _load_luckmail_client_class():
         if str(path) not in sys.path: sys.path.insert(0, str(path))
         try:
             from luckmail import LuckMailClient
-            return LuckMailClient
+            _LUCKMAIL_CLIENT_CLASS_CACHE = LuckMailClient
+            return _LUCKMAIL_CLIENT_CLASS_CACHE
         except Exception:
             continue
+
     return None
 
 class LuckMailService:
@@ -209,3 +218,31 @@ class LuckMailService:
                 return t.get("id")
         print(f"[{cfg.ts()}] [LuckMail] 未找到 '{tag_name}'，正在自动创建...")
         return self.create_tag(tag_name)
+
+    def check_token_alive(self, token: str) -> bool:
+        if not token:
+            return False
+
+        api_url = f"{self.base_url}/api/v1/openapi/email/token/{token}/alive"
+        headers = {"X-API-Key": self.api_key}
+
+        try:
+            resp = requests.get(
+                api_url,
+                headers=headers,
+                proxies=self.proxies,
+                timeout=30,
+                impersonate="chrome110"
+            )
+            res_data = resp.json()
+
+            if res_data.get("code") == 0:
+                is_alive = res_data.get("data", {}).get("alive", False)
+                status_msg = res_data.get("data", {}).get("message", "")
+                if not is_alive:
+                    print(f"[{cfg.ts()}] [LuckMail] 邮箱Token失效原因: {status_msg}")
+                return is_alive
+            return False
+        except Exception as e:
+            print(f"[{cfg.ts()}] [LuckMail] 检查邮箱可用性请求异常: {e}")
+            return False

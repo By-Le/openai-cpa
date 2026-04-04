@@ -264,8 +264,9 @@ async def get_config(token: str = Depends(verify_token)):
 async def save_config(new_config: dict, token: str = Depends(verify_token)):
     config_path = "config.yaml"
     try:
-        with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(new_config, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+        with core_engine.cfg.CONFIG_FILE_LOCK:
+            with open(config_path, "w", encoding="utf-8") as f:
+                yaml.dump(new_config, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
         try: reload_all_configs()
         except Exception: pass
         return {"status": "success", "message": "✅ 配置已成功保存！"}
@@ -459,7 +460,7 @@ async def add_wildcard_dns(req: CFSyncExistingReq, token: str = Depends(verify_t
         # return {"status": "error", "message": f"执行异常: {str(e)}"}
         
 @app.get("/api/config/cf_global_status")
-async def get_cf_global_status(main_domain: str, token: str = Depends(verify_token)):
+def get_cf_global_status(main_domain: str, token: str = Depends(verify_token)):
     try:
         cf_cfg = getattr(core_engine.cfg, '_c', {})
         api_email = cf_cfg.get("cf_api_email")
@@ -502,78 +503,78 @@ async def get_cf_global_status(main_domain: str, token: str = Depends(verify_tok
     except Exception as e:
         return {"status": "error", "message": f"状态同步失败: {str(e)}"}
 
-@app.post("/api/config/delete_cf_domains")
-async def delete_cf_domains_api(req: CFDeleteExistingReq, token: str = Depends(verify_token)):
-    try:
-        sub_list = [d.strip() for d in req.sub_domains.split(",") if d.strip()]
-        if not sub_list:
-            return {"status": "error", "message": "没有需要删除的域名"}
-
-        cf_cfg = getattr(core_engine.cfg, '_c', {})
-        configured_main_domains = [d.strip() for d in cf_cfg.get("mail_domains", "").split(",") if d.strip()]
-        cf = Cloudflare(api_email=req.api_email, api_key=req.api_key)
-
-        main_domains_map = {}
-        for sub in sub_list:
-            for main in configured_main_domains:
-                if sub.endswith(main):
-                    main_domains_map.setdefault(main, []).append(sub)
-                    break
-
-        def do_delete(zone_id, full_sub):
-            try:
-                url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/email/routing/dns"
-                headers = {
-                    "X-Auth-Email": req.api_email,
-                    "X-Auth-Key": req.api_key,
-                    "Content-Type": "application/json"
-                }
-                payload = json.dumps({"name": full_sub}).encode('utf-8')
-                request = urllib.request.Request(url, data=payload, headers=headers, method="DELETE")
-                urllib.request.urlopen(request, timeout=10)
-                dispatch_email_backend_delete(full_sub, cf_cfg)
-                return full_sub 
-            except:
-                return None
-
-        all_tasks = []
-        for main_dom, subs in main_domains_map.items():
-            zones = await asyncio.to_thread(cf.zones.list, name=main_dom)
-            if not zones.result: continue
-            zone_id = zones.result[0].id
-            
-            for full_sub in subs:
-                all_tasks.append(asyncio.to_thread(do_delete, zone_id, full_sub))
-
-        success_list = []
-        if all_tasks:
-            results = await asyncio.gather(*all_tasks)
-            success_list = [r for r in results if r]
-        
-        if success_list:
-            config_path = "config.yaml"
-            try:
-                with open(config_path, "r", encoding="utf-8") as f:
-                    c = yaml.safe_load(f) or {}
-                
-                existing_str = c.get("sub_domains_list", "")
-                if existing_str:
-                    existing_list = [d.strip() for d in existing_str.split(",") if d.strip()]
-                    new_list = [d for d in existing_list if d not in success_list]
-                    c["sub_domains_list"] = ",".join(new_list)
-                    
-                    with open(config_path, "w", encoding="utf-8") as f:
-                        yaml.dump(c, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
-                    try: reload_all_configs()
-                    except: pass
-            except: pass
-
-        return {
-            "status": "success", 
-            "message": f"🚀 清理完成！成功从全端卸载了 {len(success_list)} 个路由记录。"
-        }
-    except Exception as e:
-        return {"status": "error", "message": f"执行异常: {str(e)}"}
+# @app.post("/api/config/delete_cf_domains")
+# async def delete_cf_domains_api(req: CFDeleteExistingReq, token: str = Depends(verify_token)):
+#     try:
+#         sub_list = [d.strip() for d in req.sub_domains.split(",") if d.strip()]
+#         if not sub_list:
+#             return {"status": "error", "message": "没有需要删除的域名"}
+#
+#         cf_cfg = getattr(core_engine.cfg, '_c', {})
+#         configured_main_domains = [d.strip() for d in cf_cfg.get("mail_domains", "").split(",") if d.strip()]
+#         cf = Cloudflare(api_email=req.api_email, api_key=req.api_key)
+#
+#         main_domains_map = {}
+#         for sub in sub_list:
+#             for main in configured_main_domains:
+#                 if sub.endswith(main):
+#                     main_domains_map.setdefault(main, []).append(sub)
+#                     break
+#
+#         def do_delete(zone_id, full_sub):
+#             try:
+#                 url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/email/routing/dns"
+#                 headers = {
+#                     "X-Auth-Email": req.api_email,
+#                     "X-Auth-Key": req.api_key,
+#                     "Content-Type": "application/json"
+#                 }
+#                 payload = json.dumps({"name": full_sub}).encode('utf-8')
+#                 request = urllib.request.Request(url, data=payload, headers=headers, method="DELETE")
+#                 urllib.request.urlopen(request, timeout=10)
+#                 dispatch_email_backend_delete(full_sub, cf_cfg)
+#                 return full_sub
+#             except:
+#                 return None
+#
+#         all_tasks = []
+#         for main_dom, subs in main_domains_map.items():
+#             zones = await asyncio.to_thread(cf.zones.list, name=main_dom)
+#             if not zones.result: continue
+#             zone_id = zones.result[0].id
+#
+#             for full_sub in subs:
+#                 all_tasks.append(asyncio.to_thread(do_delete, zone_id, full_sub))
+#
+#         success_list = []
+#         if all_tasks:
+#             results = await asyncio.gather(*all_tasks)
+#             success_list = [r for r in results if r]
+#
+#         if success_list:
+#             config_path = "config.yaml"
+#             try:
+#                 with open(config_path, "r", encoding="utf-8") as f:
+#                     c = yaml.safe_load(f) or {}
+#
+#                 existing_str = c.get("sub_domains_list", "")
+#                 if existing_str:
+#                     existing_list = [d.strip() for d in existing_str.split(",") if d.strip()]
+#                     new_list = [d for d in existing_list if d not in success_list]
+#                     c["sub_domains_list"] = ",".join(new_list)
+#
+#                     with open(config_path, "w", encoding="utf-8") as f:
+#                         yaml.dump(c, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+#                     try: reload_all_configs()
+#                     except: pass
+#             except: pass
+#
+#         return {
+#             "status": "success",
+#             "message": f"🚀 清理完成！成功从全端卸载了 {len(success_list)} 个路由记录。"
+#         }
+#     except Exception as e:
+#         return {"status": "error", "message": f"执行异常: {str(e)}"}
         
 @app.get("/api/accounts")
 async def get_accounts(page: int = Query(1), page_size: int = Query(50), token: str = Depends(verify_token)):
@@ -587,7 +588,7 @@ async def get_accounts(page: int = Query(1), page_size: int = Query(50), token: 
     }
 
 @app.post("/api/account/action")
-async def account_action(data: dict, token: str = Depends(verify_token)):
+def account_action(data: dict, token: str = Depends(verify_token)):
     email = data.get("email")
     action = data.get("action")
     config = getattr(core_engine.cfg, '_c', {})
@@ -621,47 +622,47 @@ async def account_action(data: dict, token: str = Depends(verify_token)):
             return {"status": "success", "message": f"账号 {email} 已同步至 Sub2API！"}
         return {"status": "error", "message": f"Sub2API 推送失败: {resp}"}
             
-@app.post("/api/config/query_cf_domains")
-async def query_cf_domains_api(req: CFQueryReq, token: str = Depends(verify_token)):
-    try:
-        main_list = [d.strip() for d in req.main_domains.split(",") if d.strip()]
-        if not main_list:
-            return {"status": "error", "message": "请先填写主域名池！"}
-
-        cf = Cloudflare(api_email=req.api_email, api_key=req.api_key)
-        found_subdomains = set()
-        errors = []
-
-        for main_dom in main_list:
-            try:
-                zones = cf.zones.list(name=main_dom)
-                if not zones.result:
-                    errors.append(f"找不到 {main_dom} 的 Zone ID")
-                    continue
-                zone_id = zones.result[0].id
-
-                dns_records = cf.dns.records.list(zone_id=zone_id, type="MX")
-
-                for record in dns_records:
-                    if "cloudflare.net" in str(record.content).lower():
-                        if record.name != main_dom:
-                            found_subdomains.add(record.name)
-                            
-            except Exception as e:
-                errors.append(f"查询 {main_dom} 时异常: {str(e)}")
-
-        if not found_subdomains and errors:
-            return {"status": "error", "message": f"查询失败: {errors[0]}"}
-
-        result_list = list(found_subdomains)
-        
-        return {
-            "status": "success", 
-            "domains": ",".join(result_list), 
-            "message": f"成功从 CF 线上拉取到 {len(result_list)} 个已配置邮件路由的子域名！"
-        }
-    except Exception as e:
-        return {"status": "error", "message": f"执行异常: {str(e)}"}
+# @app.post("/api/config/query_cf_domains")
+# def query_cf_domains_api(req: CFQueryReq, token: str = Depends(verify_token)):
+#     try:
+#         main_list = [d.strip() for d in req.main_domains.split(",") if d.strip()]
+#         if not main_list:
+#             return {"status": "error", "message": "请先填写主域名池！"}
+#
+#         cf = Cloudflare(api_email=req.api_email, api_key=req.api_key)
+#         found_subdomains = set()
+#         errors = []
+#
+#         for main_dom in main_list:
+#             try:
+#                 zones = cf.zones.list(name=main_dom)
+#                 if not zones.result:
+#                     errors.append(f"找不到 {main_dom} 的 Zone ID")
+#                     continue
+#                 zone_id = zones.result[0].id
+#
+#                 dns_records = cf.dns.records.list(zone_id=zone_id, type="MX")
+#
+#                 for record in dns_records:
+#                     if "cloudflare.net" in str(record.content).lower():
+#                         if record.name != main_dom:
+#                             found_subdomains.add(record.name)
+#
+#             except Exception as e:
+#                 errors.append(f"查询 {main_dom} 时异常: {str(e)}")
+#
+#         if not found_subdomains and errors:
+#             return {"status": "error", "message": f"查询失败: {errors[0]}"}
+#
+#         result_list = list(found_subdomains)
+#
+#         return {
+#             "status": "success",
+#             "domains": ",".join(result_list),
+#             "message": f"成功从 CF 线上拉取到 {len(result_list)} 个已配置邮件路由的子域名！"
+#         }
+#     except Exception as e:
+#         return {"status": "error", "message": f"执行异常: {str(e)}"}
 
 @app.post("/api/logs/clear")
 async def clear_backend_logs(token: str = Depends(verify_token)):
@@ -730,16 +731,13 @@ def check_chromium_installed():
 
 # 余额查询接口示例
 @app.get('/api/sms/balance')
-async def api_get_sms_balance(token: str = Depends(verify_token)):
+def api_get_sms_balance(token: str = Depends(verify_token)):
     from utils.hero_sms import hero_sms_get_balance
     proxy_url = core_engine.cfg.DEFAULT_PROXY
-
-    # 2. 构造代理字典 (curl_cffi 需要这种映射格式)
     proxies = {
         "http": proxy_url,
         "https": proxy_url
     } if proxy_url else None
-    # 获取当前配置的代理 (如果需要走系统代理，这里可以传入 core_engine.cfg.DEFAULT_PROXY)
     balance, err = hero_sms_get_balance(proxies=proxies)
     if balance >= 0:
         return {"status": "success", "balance": f"{balance:.2f}"}
@@ -747,11 +745,10 @@ async def api_get_sms_balance(token: str = Depends(verify_token)):
 
 # 库存价格查询接口
 @app.post('/api/sms/prices')
-async def api_get_sms_prices(req: SMSPriceReq, token: str = Depends(verify_token)):
+def api_get_sms_prices(req: SMSPriceReq, token: str = Depends(verify_token)):
     from utils.hero_sms import _hero_sms_prices_by_service
     proxy_url = core_engine.cfg.DEFAULT_PROXY
 
-    # 2. 构造代理字典 (curl_cffi 需要这种映射格式)
     proxies = {
         "http": proxy_url,
         "https": proxy_url
@@ -763,7 +760,7 @@ async def api_get_sms_prices(req: SMSPriceReq, token: str = Depends(verify_token
 
 
 @app.post("/api/luckmail/bulk_buy")
-async def api_luckmail_bulk_buy(req: LuckMailBulkBuyReq, token: str = Depends(verify_token)):
+def api_luckmail_bulk_buy(req: LuckMailBulkBuyReq, token: str = Depends(verify_token)):
     try:
         from utils.luckmail_service import LuckMailService
         lm_service = LuckMailService(

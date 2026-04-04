@@ -158,11 +158,12 @@ def get_email_and_token(proxies: Any = None) -> tuple:
                             cfg.LUCKMAIL_TAG_ID = tag_id
                             try:
                                 import yaml
-                                with open("config.yaml", "r", encoding="utf-8") as f:
-                                    y = yaml.safe_load(f) or {}
-                                y.setdefault("luckmail", {})["tag_id"] = tag_id
-                                with open("config.yaml", "w", encoding="utf-8") as f:
-                                    yaml.dump(y, f, allow_unicode=True, sort_keys=False)
+                                with cfg.CONFIG_FILE_LOCK:
+                                    with open("config.yaml", "r", encoding="utf-8") as f:
+                                        y = yaml.safe_load(f) or {}
+                                    y.setdefault("luckmail", {})["tag_id"] = tag_id
+                                    with open("config.yaml", "w", encoding="utf-8") as f:
+                                        yaml.dump(y, f, allow_unicode=True, sort_keys=False)
                                 print(f"[{cfg.ts()}] [系统] 标签 ID {tag_id} 已同步至配置文件")
                             except Exception as e:
                                 print(f"[{cfg.ts()}] [WARNING] 配置文件写入失败: {e}")
@@ -210,7 +211,13 @@ def get_email_and_token(proxies: Any = None) -> tuple:
                 return None, None
                 
             selected_main = random.choice(main_list)
-            level = getattr(cfg, 'SUB_DOMAIN_LEVEL', 1) 
+            if getattr(cfg, 'RANDOM_SUB_DOMAIN_LEVEL', False):
+                level = random.randint(1, 7)
+            else:
+                try:
+                    level = int(getattr(cfg, 'SUB_DOMAIN_LEVEL', 1))
+                except:
+                    level = 1
             
             random_parts = [''.join(random.choices(string.ascii_lowercase + string.digits, k=8)) for _ in range(level)]
             selected_domain = ".".join(random_parts) + f".{selected_main}"
@@ -399,27 +406,22 @@ class ProxiedIMAP4_SSL(imaplib.IMAP4_SSL):
 
 
 def _create_imap_conn():
-    """建立 IMAP 连接（可选代理穿透）。"""
+    """建立 IMAP 连接（使用安全隔离的代理，防止多线程串台）。"""
     default_proxy = cfg.DEFAULT_PROXY
     if (cfg.USE_PROXY_FOR_EMAIL and default_proxy and
             cfg.IMAP_SERVER.lower() == "imap.gmail.com"):
         try:
-            parsed     = urlparse(default_proxy)
+            parsed = urlparse(default_proxy)
             proxy_host = parsed.hostname
             proxy_port = parsed.port or 80
-            proxy_type = (socks.HTTP if parsed.scheme.lower() in ("http", "https")
-                          else socks.SOCKS5)
-            original_socket = socket.socket
-            try:
-                socks.set_default_proxy(proxy_type, proxy_host, proxy_port)
-                socket.socket = socks.socksocket
-                conn = imaplib.IMAP4_SSL(cfg.IMAP_SERVER, cfg.IMAP_PORT, timeout=20)
-                return conn
-            finally:
-                socket.socket = original_socket
+            proxy_type = (socks.HTTP if parsed.scheme.lower() in ("http", "https") else socks.SOCKS5)
+            return ProxiedIMAP4_SSL(
+                cfg.IMAP_SERVER, cfg.IMAP_PORT,
+                proxy_host, proxy_port, proxy_type,
+                timeout=20
+            )
         except Exception as e:
             print(f"\n[{cfg.ts()}] [ERROR] IMAP 代理注入失败: {e}，回退到直连。")
-            return imaplib.IMAP4_SSL(cfg.IMAP_SERVER, cfg.IMAP_PORT, timeout=15)
     return imaplib.IMAP4_SSL(cfg.IMAP_SERVER, cfg.IMAP_PORT, timeout=15)
 
 def get_oai_code(

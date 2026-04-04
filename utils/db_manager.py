@@ -14,6 +14,8 @@ def init_db():
     """初始化 SQLite 数据库，创建账号存储表"""
     with sqlite3.connect(DB_PATH, timeout=10) as conn:
         c = conn.cursor()
+        c.execute('PRAGMA journal_mode=WAL;')
+        c.execute('PRAGMA synchronous=NORMAL;')
         c.execute('''
             CREATE TABLE IF NOT EXISTS accounts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
