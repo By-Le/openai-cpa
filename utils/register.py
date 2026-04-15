@@ -406,6 +406,7 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
     s_reg = requests.Session(proxies=proxies, impersonate="chrome110")
     s_reg.timeout = 30
     is_takeover = False
+    is_onephone = False
     target_continue_url = ""
     if not _skip_net_check():
         try:
@@ -693,6 +694,23 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                 if code_resp.status_code != 200:
                     print(f"[{cfg.ts()}] [ERROR] （{mask_email(email)}）验证码校验未通过: {code_resp.status_code}")
                     return None, None
+
+                code_account_json = code_resp.json()
+                code_account_url = code_account_json.get("continue_url", "")
+
+                if "/add-phone" in code_account_url:
+                    print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}） 账号创建过程触发手机风控，进入 HeroSMS 手机号验证流程...")
+                    ok, next_url_or_reason = _try_verify_phone_via_hero_sms(
+                        session=s_reg,
+                        proxies=proxies,
+                        hint_url=code_account_url
+                    )
+
+                    if ok and next_url_or_reason:
+                        print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}） 手机验证成功，继续创建账号: {next_url_or_reason}")
+                    else:
+                        print(f"[{cfg.ts()}] [ERROR] （{mask_email(email)}） {next_url_or_reason}")
+                        return None, None
 
             user_info = generate_random_user_info()
             print(f"[{cfg.ts()}] [INFO] （{mask_email(email)}）初始化账户信息 "
@@ -1124,7 +1142,7 @@ def run(proxy: Optional[str], run_ctx: dict = None) -> tuple:
                                         proxies=proxies,
                                     ), password
                     else:
-                        print(f"[{cfg.ts()}] [ERROR] （{mask_email(email)}） 手机号接码验证彻底失败: {next_url_or_reason}")
+                        print(f"[{cfg.ts()}] [ERROR] （{mask_email(email)}） {next_url_or_reason}")
                     break
             else:
                 break
